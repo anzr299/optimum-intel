@@ -429,7 +429,7 @@ class OVModelForCausalLMIntegrationTest(unittest.TestCase):
         if model_arch in ["qwen"]:
             return
 
-        tokens = tokenizer(["Today is a nice day and", "This is me"], return_tensors="pt", padding=True)
+        tokens = tokenizer(["The quick brown fox jumps over the", "This is me"], return_tensors="pt", padding=True)
         ov_model.generation_config.eos_token_id = None
         transformers_model.generation_config.eos_token_id = None
         ov_model.config.eos_token_id = None
