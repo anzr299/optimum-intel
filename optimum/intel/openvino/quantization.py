@@ -261,8 +261,11 @@ class OVCalibrationDatasetBuilder:
         self.trust_remote_code = trust_remote_code
         # TODO: deprecate "signature_columns": model.forward() may not be the method which is called during inference,
         #  for example there is model.generate()
-        signature = inspect.signature(self.model.forward)
-        self._signature_columns = list(signature.parameters.keys())
+        if model is not None:
+            signature = inspect.signature(self.model.forward)
+            self._signature_columns = list(signature.parameters.keys())
+        else:
+            self._signature_columns = []
 
     def build_from_quantization_config(self, config: OVQuantizationConfigBase) -> OVCalibrationDataset:
         """
@@ -658,13 +661,15 @@ class OVCalibrationDatasetBuilder:
 
         return OVCalibrationDataset(nncf.Dataset(collected_inputs))
 
-    def _prepare_causal_lm_calibration_data(self, config: OVQuantizationConfigBase) -> OVCalibrationDataset:
+    def _prepare_causal_lm_calibration_data(
+        self, config: OVQuantizationConfigBase
+    ) -> "Union[OVCalibrationDataset, nncf.Dataset]":
         """
         Prepares calibration data for causal language models.
         """
         from optimum.gptq.data import prepare_dataset
 
-        seq_len = config._dataset_kwargs.get("seq_len")
+        seq_len = getattr(config, "_dataset_kwargs", {}).get("seq_len")
         tokenizer = AutoTokenizer.from_pretrained(config.tokenizer, trust_remote_code=self.trust_remote_code)
         nsamples = config.num_samples if config.num_samples else 128
         if isinstance(config.dataset, str):
@@ -791,8 +796,19 @@ class OVCalibrationDatasetBuilder:
         else:
             raise ValueError("Please provide dataset as one of the accepted dataset labels or as a list of strings.")
         calibration_dataset = prepare_dataset(calibration_dataset)
-        calibration_dataset = nncf.Dataset(calibration_dataset, lambda x: self.model.prepare_inputs(**x))
 
+        if not isinstance(self.model, OVBaseModel):
+            def _token_position_iter():
+                for sample in calibration_dataset:
+                    input_ids = sample["input_ids"]
+                    for pos in range(input_ids.shape[1]):
+                        yield {
+                            "input_ids": input_ids[:, pos : pos + 1],
+                            "cache_position": torch.tensor([pos]),
+                        }
+            return OVCalibrationDataset(nncf.Dataset(_token_position_iter()))
+
+        calibration_dataset = nncf.Dataset(calibration_dataset, lambda x: self.model.prepare_inputs(**x))
         return OVCalibrationDataset(calibration_dataset)
 
     def _prepare_visual_causal_lm_calibration_data(
@@ -979,7 +995,7 @@ class OVCalibrationDatasetBuilder:
                 return AutoTokenizer.from_pretrained(config.tokenizer, trust_remote_code=self.trust_remote_code)
 
             num_samples = config.num_samples or 128
-            seq_len = config._dataset_kwargs.get("seq_len") or 128
+            seq_len = getattr(config, "_dataset_kwargs", {}).get("seq_len") or 128
             dataset = list(tqdm(dataset.take(num_samples), desc="Downloading dataset", total=num_samples))
 
             tokenizer = None
@@ -1311,6 +1327,7 @@ class OVQuantizer(OptimumQuantizer):
         data_collator: Optional[DataCollator] = None,
         remove_unused_columns: bool = False,
         immediate_save: bool = False,
+        compress_fn: Optional[Callable] = None,
         **kwargs,
     ):
         """
@@ -1446,12 +1463,37 @@ class OVQuantizer(OptimumQuantizer):
                 immediate_save,
                 **kwargs,
             )
+        elif isinstance(self.model, torch.fx.GraphModule):
+            self._quantize_pt2e(ov_config, compress_fn, calibration_dataset=calibration_dataset)
+        # Another option is to combine it here and by defauly use compress_weights. In TorchFX case, use the compress_fn passed by user. Discuss with Andrei Chrukin
         elif isinstance(self.model, torch.nn.Module):
             raise TypeError(
                 "The support of `torch.nn.Module` is deprecated, please use the corresponding `OVModelForXxx` class to load and export your model to the OpenVINO IR format."
             )
         else:
             raise TypeError(f"Unsupported model type: {type(self.model)}")
+
+    def _quantize_pt2e(
+        self,
+        ov_config: OVConfig,
+        compress_fn: Callable,
+        calibration_dataset: Optional[Union[OVCalibrationDataset, nncf.Dataset]] = None,
+    ):
+        """
+        Quantize a PT2E (torch.fx.GraphModule) model.
+        """
+        quantization_config = ov_config.quantization_config
+
+        if calibration_dataset is None and quantization_config.dataset:
+            calibration_dataset = self.dataset_builder._prepare_causal_lm_calibration_data(quantization_config)
+
+        dataset = None
+        if isinstance(calibration_dataset, OVCalibrationDataset):
+            dataset = calibration_dataset.get("model", next(iter(calibration_dataset.values())))
+        elif isinstance(calibration_dataset, nncf.Dataset):
+            dataset = calibration_dataset
+
+        self.model = compress_fn(self.model, dataset=dataset)
 
     def _quantize_ovbasemodel(
         self,
