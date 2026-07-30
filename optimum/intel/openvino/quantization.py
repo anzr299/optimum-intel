@@ -295,7 +295,14 @@ class OVCalibrationDatasetBuilder:
                 )
 
             if isinstance(self.model, OVModelForVisualCausalLM):
-                dataset_metadata = PREDEFINED_VISUAL_LM_DATASETS[config.dataset]
+                dataset_name = config.dataset
+                if dataset_name == "contextual":
+                    logger.warning(
+                        "The `contextual` calibration dataset is deprecated because its images are no longer "
+                        "reachable, and will be removed in a future release. Using `textvqa` instead."
+                    )
+                    dataset_name = "textvqa"
+                dataset_metadata = PREDEFINED_VISUAL_LM_DATASETS[dataset_name]
                 return self.build_from_dataset_name(
                     config,
                     dataset_metadata["id"],
@@ -856,8 +863,11 @@ class OVCalibrationDatasetBuilder:
                     break
 
                 instruction = item[dataset_metadata["inputs"]["instruction"]]
-                image_url = item[dataset_metadata["inputs"]["image_url"]]
-                image = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
+                if "image_url" in dataset_metadata["inputs"]:
+                    image_url = item[dataset_metadata["inputs"]["image_url"]]
+                    image = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
+                else:
+                    image = item[dataset_metadata["inputs"]["image"]].convert("RGB")
                 if max_image_size is not None:
                     # To avoid large images, resize them keeping the aspect ratio
                     scale_factor = max(image.size[0] / max_image_size, image.size[1] / max_image_size)
@@ -1219,6 +1229,8 @@ class OVCalibrationDatasetBuilder:
                     )
                     if inputs["input_ids"].shape[1] > seq_len:
                         inputs["input_ids"] = inputs["input_ids"][:, :seq_len]
+                        if "attention_mask" in inputs:
+                            inputs["attention_mask"] = inputs["attention_mask"][:, :seq_len]
 
                 self.model(**inputs)
 
