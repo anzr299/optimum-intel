@@ -160,8 +160,6 @@ _DEFAULT_4BIT_WQ_CONFIGS = {
         "group_size": 64,
         "ratio": 1.0,
         # Attention, all MLP down_proj and the MLP of the first three and last two decoder layers are compressed to int8
-        # (data-free). 2.03 GiB vs 1.64 GiB for int4_asym group size 128; MMLU 57.99 vs 54.35 for int4_asym group
-        # size 128 and 57.94 for fp16 (full test set, 0-shot, OpenVINO CPU).
         "scoped_configs": [
             {
                 "patterns": [
