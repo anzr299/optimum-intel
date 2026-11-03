@@ -157,9 +157,22 @@ _DEFAULT_4BIT_WQ_CONFIGS = {
     "Qwen/Qwen3-VL-2B-Instruct": {
         "bits": 4,
         "sym": False,
-        "group_size": 128,
+        "group_size": 64,
         "ratio": 1.0,
-        "quant_method": OVQuantizationMethod.AWQ,
+        # Attention, all MLP down_proj and the MLP of the first three and last two decoder layers are compressed to int8
+        # (data-free). 2.03 GiB vs 1.64 GiB for int4_asym group size 128; MMLU 57.99 vs 54.35 for int4_asym group
+        # size 128 and 57.94 for fp16 (full test set, 0-shot, OpenVINO CPU).
+        "scoped_configs": [
+            {
+                "patterns": [
+                    ".*self_attn\\.(q_proj|k_proj|v_proj|o_proj)/.*",
+                    ".*mlp\\.down_proj/.*",
+                    ".*layers\\.(0|1|2|26|27)\\.mlp\\..*",
+                ],
+                "bits": 8,
+                "sym": False,
+            }
+        ],
     },
     "Qwen/Qwen3-VL-4B-Instruct": {
         "bits": 4,
@@ -663,6 +676,13 @@ _LEGACY_DEFAULT_4BIT_WQ_CONFIGS = {
             "sym": False,
             "weight_only": True,
         },
+    },
+    "Qwen/Qwen3-VL-2B-Instruct": {
+        "bits": 4,
+        "sym": False,
+        "group_size": 128,
+        "ratio": 1.0,
+        "quant_method": OVQuantizationMethod.AWQ,
     },
     "openbmb/MiniCPM-OCR-1.0": {
         "quantization_configs": {
