@@ -24,6 +24,7 @@ from parameterized import parameterized
 from sentence_transformers import SentenceTransformer, models
 from transformers import AutoConfig, AutoTokenizer, GenerationConfig
 from utils_tests import (
+    F32_CONFIG,
     MODEL_NAMES,
     OPENVINO_DEVICE,
     REMOTE_CODE_MODELS,
@@ -125,6 +126,7 @@ class ExportModelTest(unittest.TestCase):
         "qwen3_tts": OVModelForTextToSpeechSeq2Seq,
         "cohere2": OVModelForCausalLM,
         "granitemoehybrid": OVModelForCausalLM,
+        "nemotron_h": OVModelForCausalLM,
         "smollm3": OVModelForCausalLM,
         "hunyuan_v1_dense": OVModelForCausalLM,
         "qwen3": OVModelForFeatureExtraction,
@@ -136,6 +138,9 @@ class ExportModelTest(unittest.TestCase):
         "qwen3_next": OVModelForCausalLM,
         "videochat_flash_qwen": OVModelForVisualCausalLM,
         "lfm2_moe": OVModelForCausalLM,
+        "lfm3": OVModelForCausalLM,
+        "lfm3_vl": OVModelForVisualCausalLM,
+        "lfm3_omni": OVModelForVisualCausalLM,
         "qwen3_asr": OVModelForSpeechSeq2Seq,
         "fun_asr": OVModelForSpeechSeq2Seq,
         "sense_voice": OVModelForSpeechSeq2Seq,
@@ -735,7 +740,7 @@ class CustomExportModelTest(unittest.TestCase):
 
         with TemporaryDirectory() as tmpdirname:
             export_from_model(model, output=tmpdirname, task="feature-extraction")
-            ov_model = OVModelForCustomTasks.from_pretrained(tmpdirname, device=OPENVINO_DEVICE)
+            ov_model = OVModelForCustomTasks.from_pretrained(tmpdirname, device=OPENVINO_DEVICE, ov_config=F32_CONFIG)
 
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         tokens = tokenizer("This is a sample input", return_tensors="pt")
