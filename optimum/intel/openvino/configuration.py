@@ -164,10 +164,19 @@ _DEFAULT_4BIT_WQ_CONFIGS = {
     "Qwen/Qwen3-VL-4B-Instruct": {
         "bits": 4,
         "sym": False,
-        "group_size": 128,
+        "group_size": 64,
         "ratio": 1.0,
-        "dataset": "textvqa",
-        "quant_method": OVQuantizationMethod.AWQ,
+        # Q4_K_M-style mixed precision: v_proj and down_proj of the first four, last six and every third decoder layer
+        # in between are compressed to int8
+        "scoped_configs": [
+            {
+                "patterns": [
+                    ".*layers\\.(0|1|2|3|6|9|12|15|18|21|24|27|30|31|32|33|34|35)\\.(self_attn\\.v_proj|mlp\\.down_proj)/.*",
+                ],
+                "bits": 8,
+                "sym": False,
+            }
+        ],
     },
     "Qwen/Qwen3-VL-8B-Instruct": {
         "bits": 4,
@@ -717,6 +726,20 @@ _DEFAULT_8BIT_WQ_CONFIGS_FOR_OLDER_NNCF = {
         },
     },
 }
+
+# TODO: remove once the minimum required NNCF version supports `nncf.ScopedConfig`.
+_LEGACY_DEFAULT_4BIT_WQ_CONFIGS = {
+    "Qwen/Qwen3-VL-4B-Instruct": {
+        "bits": 4,
+        "sym": False,
+        "group_size": 128,
+        "ratio": 1.0,
+        "dataset": "textvqa",
+        "quant_method": OVQuantizationMethod.AWQ,
+    },
+}
+if not is_nncf_version(">=", "3.5.0.dev0"):
+    _DEFAULT_4BIT_WQ_CONFIGS.update(_LEGACY_DEFAULT_4BIT_WQ_CONFIGS)
 
 # Add configs for model id aliases
 # The list below contains pairs of model ids: config for the second model id will be copied from the first model id.
